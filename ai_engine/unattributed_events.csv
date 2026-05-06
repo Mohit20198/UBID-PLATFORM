@@ -1,0 +1,4 @@
+source,source_record_id,event_category,event_date,is_terminal,is_high_reliability,payload,ubid
+BBMP,BBMP/560058/9999,LICENCE_RENEWAL,2026-05-06,False,False,"{""fee_paid"": 2000}",
+ESCOM,ESCOM/560100/999999,ELECTRICITY_READING,2026-04-21,False,True,"{""consumption_kwh"": 450.5}",
+FACTORIES,KAR/FACT/560058/8888,INSPECTION,2026-03-27,False,False,"{""result"": ""SATISFACTORY""}",

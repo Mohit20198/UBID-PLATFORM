@@ -28,9 +28,9 @@ from pathlib import Path
 from typing import Optional
 import re
 
-random.seed(42)  # deterministic
+random.seed(99)  # deterministic
 
-OUT_DIR = Path("synthetic_data")
+OUT_DIR = Path(__file__).parent / "synthetic_data"
 OUT_DIR.mkdir(exist_ok=True)
 
 PIN_CODES = ["560058", "560100"]
@@ -516,12 +516,12 @@ def write_csv(rows: list[dict], path: Path) -> None:
         writer = csv.DictWriter(f, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
-    print(f"  ✓ {path.name}: {len(rows)} rows")
+    print(f"  * {path.name}: {len(rows)} rows")
 
 
 def main() -> None:
     print("Generating synthetic businesses...")
-    NUM_BUSINESSES = 300  # real-world entities
+    NUM_BUSINESSES = 750  # real-world entities
     businesses = [Business(i) for i in range(1, NUM_BUSINESSES + 1)]
 
     # Introduce ~20 intentional near-duplicate businesses (similar names, same address)
@@ -551,6 +551,38 @@ def main() -> None:
 
     print("\nGenerating activity events...")
     events = generate_events(businesses)
+    
+    # Inject unattributed events for demonstration
+    events.extend([
+        {
+            "source": "BBMP",
+            "source_record_id": "BBMP/560058/9999",
+            "event_category": "LICENCE_RENEWAL",
+            "event_date": str(date.today()),
+            "is_terminal": False,
+            "is_high_reliability": False,
+            "payload": '{"fee_paid": 2000}',
+        },
+        {
+            "source": "ESCOM",
+            "source_record_id": "ESCOM/560100/999999",
+            "event_category": "ELECTRICITY_READING",
+            "event_date": str(date.today() - timedelta(days=15)),
+            "is_terminal": False,
+            "is_high_reliability": True,
+            "payload": '{"consumption_kwh": 450.5}',
+        },
+        {
+            "source": "FACTORIES",
+            "source_record_id": "KAR/FACT/560058/8888",
+            "event_category": "INSPECTION",
+            "event_date": str(date.today() - timedelta(days=40)),
+            "is_terminal": False,
+            "is_high_reliability": False,
+            "payload": '{"result": "SATISFACTORY"}',
+        }
+    ])
+    
     write_csv(events, OUT_DIR / "activity_events.csv")
 
     # Write a ground truth file for evaluation (which businesses are the same)
@@ -579,9 +611,9 @@ def main() -> None:
     write_csv(ground_truth, OUT_DIR / "ground_truth.csv")
 
     print(f"""
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+------------------------------------------
 Synthetic data generation complete.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+------------------------------------------
 Total businesses (real entities): {len(businesses)}
   BBMP records:      {len(bbmp_rows)}
   ESCOM records:     {len(escom_rows)}

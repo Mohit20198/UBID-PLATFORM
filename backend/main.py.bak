@@ -1,0 +1,521 @@
+"""
+backend/main.py
+---------------
+FastAPI server serving UBID platform data to the React frontend.
+
+Start with:
+    cd backend
+    pip install -r requirements.txt
+    uvicorn main:app --reload --port 8000
+"""
+
+import json
+import math
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
+
+import pandas as pd
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+# ── NaN-safe JSON ──────────────────────────────────────────────
+def _safe(obj):
+    """Recursively replace NaN/Inf with None so JSON serialization never fails."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_safe(i) for i in obj]
+    return obj
+
+class SafeJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(_safe(content), ensure_ascii=False).encode("utf-8")
+
+# ── Paths ─────────────────────────────────────────────────────
+ROOT      = Path(__file__).parent.parent
+AI_DIR    = ROOT / "ai_engine"
+SYNTH_DIR = AI_DIR / "synthetic_data"
+DECISIONS_FILE = Path(__file__).parent / "reviewer_decisions.json"
+
+app = FastAPI(title="UBID Platform API", version="1.0.0", default_response_class=SafeJSONResponse)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Data loading helper ───────────────────────────────────────
+def load_csv(path: Path, default_cols=None) -> pd.DataFrame:
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame(columns=default_cols or [])
+
+def sanitize(obj):
+    """Recursively replace NaN/Inf floats with None for JSON safety."""
+    import math
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize(i) for i in obj]
+    return obj
+
+def load_json(path: Path):
+    if path.exists():
+        with open(path) as f:
+            return sanitize(json.load(f))
+    return []
+
+def save_json(path: Path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+# ── Load all data at startup ───────────────────────────────────
+assignments   = load_csv(AI_DIR / "ubid_assignments.csv")
+activity      = load_csv(AI_DIR / "activity_classifications.csv")
+audit_log     = load_csv(AI_DIR / "audit_log.csv")
+auto_linked   = load_csv(AI_DIR / "auto_linked.csv")
+master        = load_csv(AI_DIR / "master_records.csv")
+unattributed  = load_csv(AI_DIR / "unattributed_events.csv")
+events_raw    = load_csv(SYNTH_DIR / "activity_events.csv")
+factories_raw = load_csv(SYNTH_DIR / "factories_licences.csv")
+review_queue  = load_json(AI_DIR / "review_queue.json")
+decisions     = load_json(DECISIONS_FILE) if DECISIONS_FILE.exists() else []
+
+# Merge decisions into review_queue
+decision_map = {d["pair_id"]: d for d in decisions}
+for item in review_queue:
+    if item["pair_id"] in decision_map:
+        item["status"]         = decision_map[item["pair_id"]]["decision"]
+        item["reviewer_notes"] = decision_map[item["pair_id"]].get("notes", "")
+
+print(f"Loaded: {len(assignments)} assignments, {len(review_queue)} review pairs, {len(activity)} activity records")
+
+
+# ── Models ────────────────────────────────────────────────────
+class ReviewDecision(BaseModel):
+    decision: str   # CONFIRM | REJECT | DEFER
+    notes: Optional[str] = ""
+
+
+# ─────────────────────────────────────────────────────────────
+# Endpoints
+# ─────────────────────────────────────────────────────────────
+
+@app.get("/api/stats")
+def get_stats():
+    """Dashboard summary statistics."""
+    total_ubids  = int(assignments['ubid'].nunique()) if not assignments.empty else 0
+    total_records = len(assignments)
+    auto_count   = len(auto_linked)
+    pending      = sum(1 for p in review_queue if p.get("status") == "PENDING")
+    confirmed    = sum(1 for p in review_queue if p.get("status") == "CONFIRM")
+    rejected     = sum(1 for p in review_queue if p.get("status") == "REJECT")
+
+    status_dist = {"ACTIVE": 0, "DORMANT": 0, "CLOSED": 0}
+    if not activity.empty:
+        vc = activity['activity_status'].value_counts().to_dict()
+        status_dist.update({k: int(v) for k, v in vc.items()})
+
+    src_dist = {}
+    if not assignments.empty:
+        vc2 = assignments['source_system'].value_counts().to_dict()
+        src_dist = {k: int(v) for k, v in vc2.items()}
+
+    return {
+        "total_ubids":       total_ubids,
+        "total_records":     total_records,
+        "auto_linked_pairs": auto_count,
+        "pending_review":    pending,
+        "confirmed_merges":  confirmed,
+        "rejected_merges":   rejected,
+        "status_breakdown":  status_dist,
+        "source_coverage":   src_dist,
+        "unattributed_events": len(unattributed),
+    }
+
+
+@app.get("/api/review-queue")
+def get_review_queue(status: Optional[str] = None, limit: int = 50):
+    """Return review queue items, optionally filtered by status."""
+    items = review_queue
+    if status:
+        items = [p for p in items if p.get("status", "PENDING") == status.upper()]
+    return items[:limit]
+
+
+@app.post("/api/review-queue/{pair_id}/decision")
+def submit_decision(pair_id: str, body: ReviewDecision):
+    """Record a reviewer decision for a queued pair."""
+    # Find the pair
+    target = None
+    for item in review_queue:
+        if item["pair_id"] == pair_id:
+            target = item
+            break
+    if not target:
+        raise HTTPException(status_code=404, detail="Pair not found")
+
+    decision_record = {
+        "pair_id":    pair_id,
+        "decision":   body.decision.upper(),
+        "notes":      body.notes or "",
+        "timestamp":  datetime.utcnow().isoformat(),
+        "reviewer":   "REVIEWER_01",
+    }
+
+    # Update in-memory
+    target["status"]         = body.decision.upper()
+    target["reviewer_notes"] = body.notes or ""
+
+    # Persist
+    decisions.append(decision_record)
+    save_json(DECISIONS_FILE, decisions)
+
+    # Append to audit log CSV
+    new_row = pd.DataFrame([{
+        "timestamp":   decision_record["timestamp"],
+        "actor":       "REVIEWER_01",
+        "decision":    body.decision.upper(),
+        "pair_id":     pair_id,
+        "unique_id_l": target["unique_id_l"],
+        "unique_id_r": target["unique_id_r"],
+        "confidence":  target["confidence_pct"],
+        "ubid":        target.get("ubid_l", ""),
+        "notes":       body.notes or "",
+    }])
+    log_path = AI_DIR / "audit_log.csv"
+    if log_path.exists():
+        existing = pd.read_csv(log_path)
+        pd.concat([existing, new_row]).to_csv(log_path, index=False)
+    else:
+        new_row.to_csv(log_path, index=False)
+
+    return {"status": "ok", "decision": body.decision.upper(), "pair_id": pair_id}
+
+
+@app.get("/api/lookup")
+def lookup(q: str = Query(..., description="source_record_id, UBID, PAN, GSTIN, or business name")):
+    """Find a UBID by any identifier or name."""
+    if assignments.empty:
+        return []
+
+    q_upper = q.strip().upper()
+    q_lower = q.strip().lower()
+
+    # Direct source_record_id match
+    by_src = assignments[assignments['source_record_id'].str.upper() == q_upper]
+    if not by_src.empty:
+        return _build_ubid_cards(by_src['ubid'].unique().tolist())
+
+    # UBID direct
+    by_ubid = assignments[assignments['ubid'].str.upper() == q_upper]
+    if not by_ubid.empty:
+        return _build_ubid_cards([q_upper])
+
+    # PAN match
+    if not assignments.empty and 'pan' in assignments.columns:
+        by_pan = assignments[assignments['pan'].fillna('').str.upper() == q_upper]
+        if not by_pan.empty:
+            return _build_ubid_cards(by_pan['ubid'].unique().tolist())
+
+    # GSTIN match
+    if not assignments.empty and 'gstin' in assignments.columns:
+        by_gstin = assignments[assignments['gstin'].fillna('').str.upper() == q_upper]
+        if not by_gstin.empty:
+            return _build_ubid_cards(by_gstin['ubid'].unique().tolist())
+
+    # Fuzzy name match (contains)
+    if 'business_name' in assignments.columns:
+        by_name = assignments[assignments['business_name'].fillna('').str.lower().str.contains(q_lower, na=False)]
+        if not by_name.empty:
+            return _build_ubid_cards(by_name['ubid'].unique()[:5].tolist())
+
+    return []
+
+
+def _build_ubid_cards(ubids: list) -> list:
+    cards = []
+    for ubid in ubids:
+        recs = assignments[assignments['ubid'] == ubid]
+        act  = activity[activity['ubid'] == ubid].iloc[0].to_dict() if (not activity.empty and (activity['ubid'] == ubid).any()) else {}
+
+        linked_records = []
+        for _, r in recs.iterrows():
+            linked_records.append({
+                "source_record_id": r['source_record_id'],
+                "source_system":    r['source_system'],
+                "business_name":    r['business_name'],
+                "address":          r.get('address', ''),
+                "pin_code":         str(r.get('pin_code', '')),
+                "pan":              r.get('pan', None),
+                "gstin":            r.get('gstin', None),
+            })
+
+        cards.append({
+            "ubid":             ubid,
+            "linked_records":   linked_records,
+            "record_count":     len(linked_records),
+            "activity_status":  act.get('activity_status', 'UNKNOWN'),
+            "confidence_pct":   act.get('confidence_pct', 0),
+            "last_signal_date": act.get('last_signal_date', None),
+            "evidence":         json.loads(act['evidence_json']) if act.get('evidence_json') else [],
+        })
+    return cards
+
+
+@app.get("/api/ubid/{ubid}")
+def get_ubid(ubid: str):
+    """Full UBID profile."""
+    cards = _build_ubid_cards([ubid.upper()])
+    if not cards:
+        raise HTTPException(status_code=404, detail="UBID not found")
+    return cards[0]
+
+
+@app.get("/api/activity")
+def get_activity(status: Optional[str] = None, pin_code: Optional[str] = None, limit: int = 100):
+    """List UBIDs with activity classification, filterable."""
+    if activity.empty:
+        return []
+    df = activity.copy()
+    if status:
+        df = df[df['activity_status'].str.upper() == status.upper()]
+
+    # Join with assignments for pin_code
+    if pin_code and not assignments.empty:
+        pins = assignments[assignments['pin_code'].astype(str) == pin_code]['ubid'].unique()
+        df   = df[df['ubid'].isin(pins)]
+
+    rows = []
+    for _, r in df.head(limit).iterrows():
+        ubid    = r['ubid']
+        rec_row = assignments[assignments['ubid'] == ubid].iloc[0] if (not assignments.empty and (assignments['ubid'] == ubid).any()) else {}
+        rows.append({
+            "ubid":             ubid,
+            "activity_status":  r['activity_status'],
+            "confidence_pct":   int(r.get('confidence_pct', 0)),
+            "score":            float(r.get('score', 0)),
+            "last_signal_date": r.get('last_signal_date', None),
+            "terminal":         bool(r.get('terminal', False)),
+            "sources_active":   json.loads(r['sources_active']) if isinstance(r.get('sources_active'), str) else [],
+            "business_name":    rec_row.get('business_name', '') if isinstance(rec_row, pd.Series) else '',
+            "pin_code":         str(rec_row.get('pin_code', '')) if isinstance(rec_row, pd.Series) else '',
+            "evidence":         json.loads(r['evidence_json']) if r.get('evidence_json') else [],
+        })
+    return rows
+
+
+@app.get("/api/query")
+def cross_dept_query(
+    pin_code:            Optional[str] = None,
+    status:              Optional[str] = None,
+    source_system:       Optional[str] = None,
+    no_inspection_months: Optional[int] = None,
+    sector:              Optional[str] = None,
+):
+    """
+    Cross-department query engine.
+    Example: active factories in 560058 with no inspection in 18 months.
+    """
+    if assignments.empty:
+        return {"results": [], "count": 0}
+
+    df = assignments.copy()
+
+    if pin_code:
+        df = df[df['pin_code'].astype(str) == pin_code]
+
+    if source_system:
+        df = df[df['source_system'].str.upper() == source_system.upper()]
+
+    ubids = df['ubid'].unique().tolist()
+
+    # Filter by activity status
+    if status and not activity.empty:
+        active_ubids = activity[activity['activity_status'].str.upper() == status.upper()]['ubid'].tolist()
+        ubids = [u for u in ubids if u in active_ubids]
+
+    # Filter by no inspection in last N months
+    results = []
+    for ubid in ubids:
+        recs = df[df['ubid'] == ubid]
+        act_row = {}
+        if not activity.empty and (activity['ubid'] == ubid).any():
+            act_row = activity[activity['ubid'] == ubid].iloc[0].to_dict()
+
+        last_inspection = None
+        if no_inspection_months is not None and not events_raw.empty:
+            src_ids = recs['source_record_id'].tolist()
+            insp_events = events_raw[
+                (events_raw['source_record_id'].isin(src_ids)) &
+                (events_raw['event_category'] == 'INSPECTION')
+            ]
+            if not insp_events.empty:
+                last_inspection = insp_events['event_date'].max()
+
+        if no_inspection_months is not None:
+            cutoff_days = no_inspection_months * 30
+            if last_inspection:
+                from datetime import date, datetime
+                d = datetime.strptime(str(last_inspection), "%Y-%m-%d").date()
+                days_ago = (date.today() - d).days
+                if days_ago <= cutoff_days:
+                    continue  # has inspection within window — exclude
+
+        results.append({
+            "ubid":             ubid,
+            "business_name":    recs.iloc[0]['business_name'],
+            "pin_code":         str(recs.iloc[0]['pin_code']),
+            "sources":          recs['source_system'].tolist(),
+            "activity_status":  act_row.get('activity_status', 'UNKNOWN'),
+            "confidence_pct":   int(act_row.get('confidence_pct', 0)),
+            "last_signal_date": act_row.get('last_signal_date', None),
+            "last_inspection":  last_inspection,
+            "record_count":     len(recs),
+        })
+
+    return {"results": results, "count": len(results)}
+
+
+@app.get("/api/audit-log")
+def get_audit_log(limit: int = 200):
+    """Full audit log of all system and human decisions."""
+    log_path = AI_DIR / "audit_log.csv"
+    if not log_path.exists():
+        return []
+    df = pd.read_csv(log_path)
+    return df.tail(limit).to_dict(orient="records")
+
+
+@app.get("/api/unattributed-events")
+def get_unattributed(limit: int = 50):
+    """Events that could not be joined to any UBID."""
+    if unattributed.empty:
+        return []
+    return unattributed.head(limit).to_dict(orient="records")
+
+
+@app.get("/")
+def root():
+    return {"status": "UBID Platform API running", "version": "1.0.0"}
+
+
+# ─────────────────────────────────────────────────────────────
+# Ollama LLM Endpoint — AI Audit Summary
+# ─────────────────────────────────────────────────────────────
+class ExplainRequest(BaseModel):
+    pair_id: str
+
+@app.post("/api/ai-explain")
+def ai_explain(body: ExplainRequest):
+    """
+    Generate a natural-language audit explanation for a review-queue pair
+    using the local Ollama LLM. Operates only on scrambled/synthetic data.
+    Falls back to a rule-based template if Ollama is unreachable.
+    """
+    import urllib.request
+
+    pair = next((p for p in review_queue if p["pair_id"] == body.pair_id), None)
+    if not pair:
+        raise HTTPException(status_code=404, detail="Pair not found")
+
+    # Build structured (non-PII) prompt from feature evidence only
+    pan_match   = pair.get("pan_l") and pair.get("pan_l") == pair.get("pan_r")
+    gstin_match = pair.get("gstin_l") and pair.get("gstin_l") == pair.get("gstin_r")
+    pin_match   = pair.get("pin_code_l") == pair.get("pin_code_r")
+    score       = pair.get("confidence_pct", 0)
+    src_l       = pair.get("source_system_l") or "Dept-A"
+    src_r       = pair.get("source_system_r") or "Dept-B"
+
+    contribs = pair.get("feature_contributions", {})
+    contrib_str = "; ".join(
+        f"{k.replace('_', ' ')}: {'+' if v > 0 else ''}{v} pts"
+        for k, v in contribs.items()
+    )
+
+    prompt = (
+        f"You are a strict government audit AI for Karnataka Commerce and Industry. "
+        f"Analyze this potential duplicate business record match:\n"
+        f"- Source A system: {src_l}, Record ID: {pair.get('unique_id_l', '')}\n"
+        f"- Source B system: {src_r}, Record ID: {pair.get('unique_id_r', '')}\n"
+        f"- PAN identifier match: {'YES' if pan_match else 'NO or absent'}\n"
+        f"- GSTIN identifier match: {'YES' if gstin_match else 'NO or absent'}\n"
+        f"- Same pin code: {'YES' if pin_match else 'NO'}\n"
+        f"- Overall confidence: {score}%\n"
+        f"- Feature evidence: {contrib_str}\n"
+        f"In exactly one sentence, state whether these records represent the same "
+        f"real-world business entity and which evidence is most decisive."
+    )
+
+    # Try Ollama — attempt phi3 first, then llama3.2
+    for model in ["phi3", "llama3.2", "llama3", "gemma"]:
+        try:
+            payload = json.dumps({
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.1, "num_predict": 120}
+            }).encode("utf-8")
+
+            req = urllib.request.Request(
+                "http://localhost:11434/api/generate",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                text   = result.get("response", "").strip().split("\n")[0].strip('"')
+                if text:
+                    return {"explanation": text, "model": model, "pair_id": body.pair_id}
+        except Exception:
+            continue
+
+    # Rule-based fallback (no LLM dependency)
+    if pan_match or gstin_match:
+        explanation = (
+            f"These records share the same {'PAN' if pan_match else 'GSTIN'} identifier "
+            f"across {src_l} and {src_r}, providing strong legal-entity evidence that they "
+            f"represent the same business — the {score}% confidence score supports auto-linking."
+        )
+    elif score >= 70:
+        explanation = (
+            f"A {score}% confidence score driven by name similarity and shared location data "
+            f"suggests these {src_l} and {src_r} records likely refer to the same business, "
+            f"but the absence of a PAN/GSTIN anchor means human confirmation is required."
+        )
+    else:
+        explanation = (
+            f"The {score}% confidence score reflects weak evidence — name and address signals "
+            f"are ambiguous and no identifier anchor is present — making this pair a likely "
+            f"false positive that should be rejected unless a reviewer has additional context."
+        )
+
+    return {"explanation": explanation, "model": "rule-based-fallback", "pair_id": body.pair_id}
+
+
+@app.get("/api/ollama-status")
+def ollama_status():
+    """Check whether Ollama is reachable and which models are available."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
+            data = json.loads(r.read().decode())
+            models = [m["name"] for m in data.get("models", [])]
+            return {"available": True, "models": models}
+    except Exception as e:
+        return {"available": False, "models": [], "error": str(e)}
+
