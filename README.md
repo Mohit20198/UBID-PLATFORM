@@ -9,7 +9,7 @@ By aggregating disparate, messy records from systems like BBMP (Trade Licences),
 * **Activity Monitor & Lifecycle Inference:** Decays signal weights over time (e.g. paying an electricity bill vs passing an inspection) to intelligently categorize a business as **ACTIVE**, **DORMANT**, or **CLOSED**.
 * **Reviewer Workbench:** Flags ambiguous matches (55%-84% confidence) for manual verification by a human analyst.
 * **Cross-Department Query Engine:** Allows filtering across departments (e.g., finding all ACTIVE factories in a specific pin code that haven't had an inspection in 18 months).
-* **LLM Explanations:** Optionally uses local Ollama models to generate natural language explanations for AI matching decisions.
+* **LLM Explanations:** Uses local Ollama models to generate natural language explanations for AI matching decisions.
 
 ## Tech Stack
 * **AI Engine:** Python, Pandas, DuckDB, Splink (v3)

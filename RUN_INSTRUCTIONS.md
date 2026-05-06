@@ -55,8 +55,8 @@ npm run dev
 ```
 *The dashboard UI will be available at `http://localhost:5173`.*
 
-## 5. (Optional) Ollama Integration
-If you want the AI Explanations in the Reviewer Workbench to work natively:
+## 5. Ollama LLM Integration
+To power the AI Explanations in the Reviewer Workbench:
 1. Download and install [Ollama](https://ollama.com/)
 2. Run `ollama run phi3` or `ollama run llama3.2`
-The backend will automatically detect if Ollama is running on port 11434 and use it to explain AI entity matches.
+The backend will automatically detect Ollama running on port 11434 and use it to explain AI entity matches.
