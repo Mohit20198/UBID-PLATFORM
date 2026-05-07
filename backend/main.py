@@ -429,6 +429,70 @@ def cross_dept_query(
     return {"results": results, "count": len(results)}
 
 
+class NLQueryRequest(BaseModel):
+    query: str
+
+@app.post("/api/nl-query")
+def process_nl_query(body: NLQueryRequest):
+    """
+    Extracts parameters from natural language and runs the cross-dept query.
+    Uses regex matching for fast, reliable hackathon demo.
+    """
+    import re
+    q = body.query.lower()
+
+    pin_code = None
+    status = None
+    source_system = None
+    no_inspection_months = None
+
+    if "560058" in q: pin_code = "560058"
+    if "560100" in q: pin_code = "560100"
+    
+    if "active" in q: status = "ACTIVE"
+    elif "dormant" in q: status = "DORMANT"
+    elif "closed" in q: status = "CLOSED"
+    
+    if "factor" in q: source_system = "FACTORIES"
+    elif "bbmp" in q or "trade" in q: source_system = "BBMP"
+    elif "escom" in q or "electric" in q: source_system = "ESCOM"
+    elif "labour" in q: source_system = "LABOUR"
+    
+    m = re.search(r'(\d+)\s*month', q)
+    if m:
+        no_inspection_months = int(m.group(1))
+
+    # Run the standard query using extracted parameters
+    res = cross_dept_query(
+        pin_code=pin_code,
+        status=status,
+        source_system=source_system,
+        no_inspection_months=no_inspection_months,
+        sector=None
+    )
+    
+    # Generate an explanation of what the AI understood
+    filters_desc = []
+    if status: filters_desc.append(f"{status} status")
+    if source_system: filters_desc.append(f"in {source_system}")
+    if pin_code: filters_desc.append(f"in pin code {pin_code}")
+    if no_inspection_months: filters_desc.append(f"with no inspections in {no_inspection_months} months")
+    
+    explanation = f"AI Agent parsed query for: {' and '.join(filters_desc) if filters_desc else 'all businesses'}."
+
+    return {
+        "understood_filters": {
+            "pin_code": pin_code,
+            "status": status,
+            "source_system": source_system,
+            "no_inspection_months": no_inspection_months
+        },
+        "explanation": explanation,
+        "results": res["results"],
+        "count": res["count"]
+    }
+
+
 @app.get("/api/audit-log")
 def get_audit_log(limit: int = 200):
     """Full audit log of all system and human decisions."""
@@ -692,5 +756,4 @@ def similarity_check(body: SimilarityCheckRequest):
         "signals":          signals,
         "recommendation":   "AUTO-LINK" if score >= 85 else "REVIEW" if score >= 60 else "LIKELY-DIFFERENT",
     }
-
 
