@@ -2,12 +2,12 @@ import { NavLink, Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 
 const NAV = [
-  { to: '/dashboard', label: 'Dashboard',       icon: '⬡' },
-  { to: '/review',    label: 'Review Queue',    icon: '⚑' },
-  { to: '/lookup',    label: 'UBID Lookup',     icon: '⌖' },
-  { to: '/activity',  label: 'Activity Monitor',icon: '◈' },
-  { to: '/query',     label: 'Cross-Dept Query',icon: '⊞' },
-  { to: '/audit',     label: 'Audit Log',       icon: '≡' },
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/review',    label: 'Review Queue' },
+  { to: '/lookup',    label: 'UBID Lookup' },
+  { to: '/activity',  label: 'Activity Monitor' },
+  { to: '/query',     label: 'Cross-Dept Query' },
+  { to: '/audit',     label: 'Audit Log' },
 ]
 
 export default function Navbar() {
@@ -22,7 +22,7 @@ export default function Navbar() {
   return (
     <nav className="topnav">
       <Link to="/" className="topnav-brand">
-        <div className="brand-icon">🔗</div>
+        <div className="brand-icon" style={{ fontSize: 13, fontWeight: 900, letterSpacing: -0.5 }}>U</div>
         <div className="brand-text">
           <h1>UBID Platform</h1>
           <p>Karnataka Commerce &amp; Industry</p>
@@ -30,13 +30,12 @@ export default function Navbar() {
       </Link>
 
       <div className="topnav-nav">
-        {NAV.map(({ to, label, icon }) => (
+        {NAV.map(({ to, label }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
           >
-            <span className="nav-icon">{icon}</span>
             {label}
             {to === '/review' && pendingCount > 0 && (
               <span className="nav-badge-count">{pendingCount}</span>

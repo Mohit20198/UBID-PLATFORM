@@ -54,7 +54,7 @@ export default function UBIDLookup() {
       <div className="card" style={{ marginBottom: 28 }}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
           <div style={{ position: 'relative', flex: 1 }}>
-            <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 16 }}>⌖</span>
+            <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 14, fontWeight: 700 }}>ID</span>
             <input
               className="input"
               style={{ paddingLeft: 40 }}
@@ -65,7 +65,7 @@ export default function UBIDLookup() {
             />
           </div>
           <button className="btn btn-primary" onClick={search} style={{ whiteSpace: 'nowrap', minWidth: 100 }}>
-            {loading ? 'Searching...' : '⌖ Search'}
+            {loading ? 'Searching...' : 'Search'}
           </button>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -82,7 +82,7 @@ export default function UBIDLookup() {
 
       {!loading && searched && results?.length === 0 && (
         <div className="card empty-state">
-          <div className="empty-icon">🔍</div>
+          <div className="empty-icon" style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-muted)' }}>ID</div>
           <p>No UBID found for <strong>"{query}"</strong></p>
           <p style={{ fontSize: 12, marginTop: 8 }}>Try a different search term or check spelling</p>
         </div>

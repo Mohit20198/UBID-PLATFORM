@@ -67,7 +67,7 @@ export default function AuditLog() {
                   </td>
                   <td>
                     <span className={`badge ${row.actor === 'SYSTEM' ? 'badge-system' : 'badge-pending'}`}>
-                      {row.actor === 'SYSTEM' ? '🤖 SYSTEM' : `👤 ${row.actor}`}
+                      {row.actor === 'SYSTEM' ? 'SYS' : `${row.actor}`}
                     </span>
                   </td>
                   <td>

@@ -8,22 +8,22 @@ function StatusBadge({ s }) {
 
 const PRESET_QUERIES = [
   {
-    icon: '🏭', label: 'Active factories — no inspection in 18 months (Peenya)',
+    icon: 'FA', label: 'Active factories — no inspection in 18 months (Peenya)',
     tag: 'Compliance Risk',
     params: { pin_code: '560058', status: 'ACTIVE', source_system: 'FACTORIES', no_inspection_months: 18 }
   },
   {
-    icon: '⚡', label: 'All active businesses in Electronic City (560100)',
+    icon: 'EC', label: 'All active businesses in Electronic City (560100)',
     tag: 'Area Snapshot',
     params: { pin_code: '560100', status: 'ACTIVE' }
   },
   {
-    icon: '🌙', label: 'Dormant businesses in Peenya (560058)',
+    icon: 'DR', label: 'Dormant businesses in Peenya (560058)',
     tag: 'Outreach Target',
     params: { pin_code: '560058', status: 'DORMANT' }
   },
   {
-    icon: '🚫', label: 'Closed businesses across all pin codes',
+    icon: 'CL', label: 'Closed businesses across all pin codes',
     tag: 'Lifecycle Analysis',
     params: { status: 'CLOSED' }
   },

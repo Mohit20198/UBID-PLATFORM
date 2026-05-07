@@ -1,5 +1,25 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
+/* Custom cursor */
+* { cursor: none !important; }
+.cursor-dot {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  position: fixed; pointer-events: none;
+  z-index: 99999; transform: translate(-50%, -50%);
+  transition: transform 0.1s ease;
+  box-shadow: 0 0 10px rgba(255,153,51,0.6);
+}
+.cursor-ring {
+  width: 28px; height: 28px;
+  border: 1.5px solid rgba(255,153,51,0.4);
+  border-radius: 50%;
+  position: fixed; pointer-events: none;
+  z-index: 99998; transform: translate(-50%, -50%);
+  transition: all 0.12s ease;
+}
+
 :root {
   --bg-base:       #020408;
   --bg-surface:    #080d14;
@@ -161,7 +181,17 @@ body {
 /* ── App Shell ── */
 .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
 .main-content { margin-top: var(--topnav-h); padding: 36px; flex: 1; max-width: 1400px; width: 100%; margin-left: auto; margin-right: auto; }
-.main-content.full-width { max-width: none; padding: 0; }
+.main-content.full-width { max-width: none; padding: 0; margin-top: 0; }
+
+/* ── Hero animate-in ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-in {
+  opacity: 0;
+  animation: fadeInUp 0.65s ease forwards;
+}
 
 /* ── Page Header ── */
 .page-header { margin-bottom: 32px; }
@@ -295,10 +325,17 @@ body {
   color: var(--text-primary); font-size: 14px;
   font-family: inherit; width: 100%; outline: none;
   transition: all 0.2s;
+  color-scheme: dark;
 }
 .input:focus { border-color: var(--accent); background: rgba(255,153,51,0.04); box-shadow: 0 0 0 3px var(--accent-dim); }
 .input::placeholder { color: var(--text-muted); }
-select.input { cursor: pointer; }
+select.input { cursor: none; color-scheme: dark; }
+select.input option {
+  background-color: #0d1521;
+  color: #f0f4ff;
+  font-family: 'Inter', sans-serif;
+  padding: 8px 12px;
+}
 
 /* ── AI Box ── */
 .ai-box {

@@ -5,5 +5,19 @@
     "notes": "matched same gstin",
     "timestamp": "2026-05-06T06:51:56.797742",
     "reviewer": "REVIEWER_01"
+  },
+  {
+    "pair_id": "PAIR-00002",
+    "decision": "CONFIRM",
+    "notes": "",
+    "timestamp": "2026-05-07T05:20:20.521679",
+    "reviewer": "REVIEWER_01"
+  },
+  {
+    "pair_id": "PAIR-00003",
+    "decision": "CONFIRM",
+    "notes": "",
+    "timestamp": "2026-05-07T05:20:24.870470",
+    "reviewer": "REVIEWER_01"
   }
 ]

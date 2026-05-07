@@ -166,7 +166,7 @@ export default function ReviewerWorkbench() {
                   <div style={{ textAlign: 'right', flexShrink: 0 }}>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'monospace' }}>{pair.pair_id}</div>
                     <button className="btn btn-primary btn-sm" onClick={runAiExplain} disabled={aiLoading}>
-                      {aiLoading ? '⏳ Analyzing...' : '🧠 AI Analysis'}
+                      {aiLoading ? 'Analyzing...' : 'AI Analysis'}
                     </button>
                   </div>
                 </div>

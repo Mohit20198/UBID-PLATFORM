@@ -58,7 +58,7 @@ export default function Dashboard() {
   const pieData = Object.entries(stats.status_breakdown || {}).map(([name, value]) => ({ name, value }))
   const srcData = Object.entries(stats.source_coverage || {}).map(([name, value]) => ({ name, value }))
   const linkRate = stats.total_records > 0
-    ? ((stats.auto_linked_pairs * 2) / stats.total_records * 100).toFixed(1) : 0
+    ? (stats.auto_linked_pairs / stats.total_records * 100).toFixed(1) : 0
 
   return (
     <div>
@@ -88,12 +88,12 @@ export default function Dashboard() {
 
       {/* Stats Grid */}
       <div className="stats-grid">
-        <StatCard icon="🔗" label="Unique UBIDs"        value={stats.total_ubids?.toLocaleString()}          sub="Distinct real-world businesses" accent tooltip="Unique business entities grouped under a UBID." color="var(--accent)" />
-        <StatCard icon="📂" label="Source Records"      value={stats.total_records?.toLocaleString()}         sub="Across 4 department systems" tooltip="Total raw records ingested. Click to explore." onClick={openSourcesModal} color="var(--blue)" />
-        <StatCard icon="⚡" label="Auto-Linked Pairs"   value={stats.auto_linked_pairs?.toLocaleString()}     sub="Confidence ≥ 85%" tooltip="Pairs grouped automatically by the AI engine." color="#a855f7" />
-        <StatCard icon="⚑" label="Pending Review"       value={stats.pending_review}                          sub="Ambiguous pairs 55–84%" tooltip="Pairs flagged for human review." color="var(--dormant)" />
-        <StatCard icon="✓" label="Confirmed Merges"     value={stats.confirmed_merges}                        sub="Human-verified decisions" tooltip="Pairs manually approved by reviewers." color="var(--active)" />
-        <StatCard icon="⚠" label="Unattributed Events" value={stats.unattributed_events}                      sub="Events without UBID match" tooltip="Activity events with no known business match." color="var(--closed)" />
+        <StatCard icon="#" label="Unique UBIDs"        value={stats.total_ubids?.toLocaleString()}          sub="Distinct real-world businesses" accent tooltip="Unique business entities grouped under a UBID." color="var(--accent)" />
+        <StatCard icon="F" label="Source Records"      value={stats.total_records?.toLocaleString()}         sub="Across 4 department systems" tooltip="Total raw records ingested. Click to explore." onClick={openSourcesModal} color="var(--blue)" />
+        <StatCard icon="L" label="Auto-Linked Pairs"   value={stats.auto_linked_pairs?.toLocaleString()}     sub="Confidence >= 85%" tooltip="Pairs grouped automatically by the AI engine." color="#a855f7" />
+        <StatCard icon="R" label="Pending Review"       value={stats.pending_review}                          sub="Ambiguous pairs 55-84%" tooltip="Pairs flagged for human review." color="var(--dormant)" />
+        <StatCard icon="V" label="Confirmed Merges"     value={stats.confirmed_merges}                        sub="Human-verified decisions" tooltip="Pairs manually approved by reviewers." color="var(--active)" />
+        <StatCard icon="!" label="Unattributed Events" value={stats.unattributed_events}                      sub="Events without UBID match" tooltip="Activity events with no known business match." color="var(--closed)" />
       </div>
 
       <div className="two-col" style={{ marginBottom: 24 }}>
@@ -162,13 +162,13 @@ export default function Dashboard() {
         <div className="section-title">Quick Actions</div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <Link to="/review" className="btn btn-primary">
-            ⚑ Review Queue
+            Review Queue
             {stats.pending_review > 0 && <span className="nav-badge-count">{stats.pending_review}</span>}
           </Link>
-          <Link to="/query"    className="btn btn-ghost">⊞ Run Cross-Dept Query</Link>
-          <Link to="/lookup"   className="btn btn-ghost">⌖ UBID Lookup</Link>
-          <Link to="/activity" className="btn btn-ghost">◈ Activity Monitor</Link>
-          <Link to="/audit"    className="btn btn-ghost">≡ Audit Log</Link>
+          <Link to="/query"    className="btn btn-ghost">Cross-Dept Query</Link>
+          <Link to="/lookup"   className="btn btn-ghost">UBID Lookup</Link>
+          <Link to="/activity" className="btn btn-ghost">Activity Monitor</Link>
+          <Link to="/audit"    className="btn btn-ghost">Audit Log</Link>
         </div>
       </div>
 
